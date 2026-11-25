@@ -91,6 +91,7 @@ int lpmd_init_config_state(lpmd_config_state_t *state)
 	state->name[0] = '\0';
 
 	state->wlt_type = -1;
+	state->wlt_type_mask = -1;
 
 	state->entry_system_load_thres = 0;
 	state->exit_system_load_thres = 0;
@@ -109,12 +110,9 @@ int lpmd_init_config_state(lpmd_config_state_t *state)
 	state->active_cpus[0] = '\0';
 	state->cpumask_idx = CPUMASK_NONE;
 
-	state->island_0_number_p_cores = 0;
-	state->island_0_number_e_cores = 0;
-	state->island_1_number_p_cores = 0;
-	state->island_1_number_e_cores = 0;
-	state->island_2_number_p_cores = 0;
-	state->island_2_number_e_cores = 0;
+	state->active_p_cores[0] = '\0';
+	state->active_e_cores[0] = '\0';
+	state->active_l_cores[0] = '\0';
 
 	state->itmt_state = SETTING_IGNORE;
 	state->irq_migrate = SETTING_IGNORE;
@@ -143,6 +141,14 @@ static int config_state_match(lpmd_config_t *config, int idx)
 
 	if (!state->valid)
 		return 0;
+
+	if (state->wlt_type_mask != -1) {
+		if (config->wlt_hint_mask != -1)
+			wlt_index &= config->wlt_hint_mask;
+
+		if (!(state->wlt_type_mask & (1 << wlt_index)))
+			return 0;
+	}
 
 	if (state->wlt_type != -1) {
 		if (config->wlt_hint_mask != -1)
@@ -223,6 +229,9 @@ static void dump_state(lpmd_config_state_t *state, char *str, int debug)
 
 	if (state->wlt_type)
 		offset += snprintf(buf + offset , MAX_STR_LENGTH - offset, "WLT [%2d] ", state->wlt_type);
+
+	if (state->wlt_type_mask)
+		offset += snprintf(buf + offset , MAX_STR_LENGTH - offset, "WLTMASK [%2d] ", state->wlt_type_mask);
 
 	if (state->entry_system_load_thres)
 		offset += snprintf(buf + offset , MAX_STR_LENGTH - offset, "SYS [%6d] ", state->entry_system_load_thres / 100);
@@ -468,13 +477,13 @@ static void dump_states(lpmd_config_t *lpmd_config)
 		lpmd_log_info ("\tIRQMigrate:%d\n", state->irq_migrate);
 		if (state->active_cpus[0] != '\0')
 			lpmd_log_info ("\tactive_cpus:%s\n", state->active_cpus);
+		if (state->active_p_cores[0] != '\0')
+			lpmd_log_info ("\tactive_p_cores:%s\n", state->active_p_cores);
+		if (state->active_e_cores[0] != '\0')
+			lpmd_log_info ("\tactive_e_cores:%s\n", state->active_e_cores);
+		if (state->active_l_cores[0] != '\0')
+			lpmd_log_info ("\tactive_l_cores:%s\n", state->active_l_cores);
 		lpmd_log_info ("\tCPUMASK idx:%d\n", state->cpumask_idx);
-		lpmd_log_info ("\tisland_0_number_p_cores:%d\n", state->island_0_number_p_cores);
-		lpmd_log_info ("\tisland_0_number_e_cores:%d\n", state->island_0_number_e_cores);
-		lpmd_log_info ("\tisland_1_number_p_cores:%d\n", state->island_1_number_p_cores);
-		lpmd_log_info ("\tisland_1_number_e_cores:%d\n", state->island_1_number_e_cores);
-		lpmd_log_info ("\tisland_2_number_p_cores:%d\n", state->island_2_number_p_cores);
-		lpmd_log_info ("\tisland_2_number_e_cores:%d\n", state->island_2_number_e_cores);
 		lpmd_log_info ("\tBalancedSliderAC:%d\n", state->balance_slider_ac);
 		lpmd_log_info ("\tBalancedSliderDC:%d\n", state->balance_slider_dc);
 		lpmd_log_info ("\tSliderOffsetAC:%d\n", state->slider_offset_ac);
@@ -589,7 +598,7 @@ static int config_states_update_config(lpmd_config_t *config)
 		if (state->cpumask_idx == CPUMASK_HFI)
 			config->hfi_lpm_enable = 1;
 
-		if (state->wlt_type != -1)
+		if (state->wlt_type != -1 || state->wlt_type_mask != -1)
 			config->wlt_hint_enable = 1;
 
 		if (state->entry_system_load_thres)
@@ -605,7 +614,11 @@ static int config_states_update_config(lpmd_config_t *config)
 }
 
 
-static int build_state_cpumask(lpmd_config_state_t *state)
+/*
+ * Return 0 on success, -1 on error and -2 when the state does not specify
+ * ActiveCPUs at all.
+ */
+static int build_state_cpumask_activecpus(lpmd_config_state_t *state)
 {
 	state->steady = 1;
 
@@ -613,7 +626,7 @@ static int build_state_cpumask(lpmd_config_state_t *state)
 		return 0;
 
 	if (state->active_cpus[0] == '\0')
-		return 0;
+		return -2;
 
 	if (!strncmp(state->active_cpus, "all", sizeof("all")) ||
 	    !strncmp(state->active_cpus, "ALL", sizeof("ALL"))) {
@@ -649,20 +662,72 @@ static int build_state_cpumask(lpmd_config_state_t *state)
 	return 0;
 }
 
+static int build_state_cpumask_cputypes(lpmd_config_state_t *state,
+					unsigned char **cmasks)
+{
+	int ret;
+
+	if (state->cpumask_idx != CPUMASK_NONE)
+		return 0;
+
+	if (state->active_p_cores[0] == '\0' && state->active_e_cores[0] == '\0' &&
+	    state->active_l_cores[0] == '\0')
+		return 0;
+
+	state->cpumask_idx = cpumask_alloc();
+	if (state->cpumask_idx == CPUMASK_NONE) {
+		lpmd_log_error("Cannot alloc CPUMASK\n");
+		return -1;
+	}
+
+	/* Setup the specified P-cores */
+	ret = cpumask_init_cpus_type(state->active_p_cores, state->cpumask_idx, cmasks, P_CORE);
+	if (ret < 0)
+		goto err;
+
+	/* Setup the specified E-cores */
+	ret = cpumask_init_cpus_type(state->active_e_cores, state->cpumask_idx, cmasks, E_CORE);
+	if (ret < 0)
+		goto err;
+
+	/* Setup the specified L-cores */
+	ret = cpumask_init_cpus_type(state->active_l_cores, state->cpumask_idx, cmasks, L_CORE);
+	if (ret < 0)
+		goto err;
+
+	if (!cpumask_has_cpu(state->cpumask_idx)) {
+		lpmd_log_error("No CPUs matched the active core list for state %s\n", state->name);
+		goto err;
+	}
+
+	return 0;
+
+err:
+	cpumask_free(state->cpumask_idx);
+	state->cpumask_idx = CPUMASK_NONE;
+	return -1;
+}
+
 #define DEFAULT_POLL_RATE_MS	1000
 
 int lpmd_build_config_states(lpmd_config_t *lpmd_config)
 {
 	lpmd_config_state_t *state;
-	int i;
+	int ret, i;
 
 	build_default_states(lpmd_config);
 
 	for (i = CONFIG_STATE_BASE; i < CONFIG_STATE_BASE + lpmd_config->config_state_count; i++) {
 		state = &lpmd_config->config_states[i];
 
-		if (build_state_cpumask(state))
+		ret = build_state_cpumask_activecpus(state);
+		if (ret == -2) {
+			ret = build_state_cpumask_cputypes(state, lpmd_config->core_type_masks);
+			if (ret)
+				continue;
+		} else if (ret) {
 			continue;
+		}
 
 		if (state->entry_system_load_thres || state->enter_cpu_load_thres || state->enter_gfx_load_thres)
 			polling_enabled = 1;

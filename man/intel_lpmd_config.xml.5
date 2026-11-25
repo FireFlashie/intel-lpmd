@@ -175,9 +175,28 @@ Workload type value to enter into this state. If this value is defined
 then utilization based entry triggers are not used. To use this
 WLTHintEnable must be enabled, so that hardware notifications are enabled.
 .PP
+.B WLTTypeMask
+Bitmask of workload type values to enter into this state. Bit N enables
+workload type N, so a value of 3 matches both workload type 0 and 1. This
+has higher priority than WLTType. If this value is defined then utilization
+based entry triggers are not used.
+.PP
 .B ActiveCPUs
 Active CPUs in this state. The list can be comma separated or use "-" for
 a range. This is optional to have active CPUs in a state.
+.PP
+.B ActivePcores
+Active P-cores in this state. Either a number of cores or the "ALL" keyword
+to use every P-core. If none of ActiveCPUs, ActivePcores, ActiveEcores and
+ActiveLcores is set, the state does not change the CPU mask.
+.PP
+.B ActiveEcores
+Active E-cores in this state. Either a number of cores or the "ALL" keyword
+to use every E-core.
+.PP
+.B ActiveLcores
+Active L-cores (LP E-cores) in this state. Either a number of cores or the
+"ALL" keyword to use every L-core.
 .PP
 .B EPP
 EPP to apply for this state. -1 to ignore.

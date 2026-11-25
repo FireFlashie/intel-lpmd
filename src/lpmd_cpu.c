@@ -313,6 +313,11 @@ int detect_cpu_topo(lpmd_config_t *lpmd_config)
 	if (ret)
 		return ret;
 
+	/* Allocate space for per-type cpu masks */
+	ret = allocate_cpu_type_masks(lpmd_config);
+	if (ret)
+		return ret;
+
 	cpumask_reset(CPUMASK_ONLINE);
 	pcores = ecores = lcores = 0;
 
@@ -344,12 +349,16 @@ int detect_cpu_topo(lpmd_config_t *lpmd_config)
 	for (i = 0; i < get_max_cpus(); i++) {
 		if (!is_cpu_online(i))
 			continue;
-		if (is_cpu_pcore(i))
+		if (is_cpu_pcore(i)) {
 			pcores++;
-		else if (is_cpu_ecore(i))
+			lpmd_config->core_type_masks[P_CORE][i / 8] |= 1 << (i % 8);
+		} else if (is_cpu_ecore(i)) {
 			ecores++;
-		else if (is_cpu_lcore(i))
+			lpmd_config->core_type_masks[E_CORE][i / 8] |= 1 << (i % 8);
+		} else if (is_cpu_lcore(i)) {
 			lcores++;
+			lpmd_config->core_type_masks[L_CORE][i / 8] |= 1 << (i % 8);
+		}
 	}
 
 	tdp = get_tdp();

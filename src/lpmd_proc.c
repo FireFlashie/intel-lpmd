@@ -419,6 +419,9 @@ int lpmd_main(void)
 	/* Must done after init_cpu() */
 	lpmd_build_config_states(&lpmd_config);
 
+	/* Cleanup dynamically allocated core-type cpumasks */
+	free_cpu_type_masks(&lpmd_config);
+
 	ret = irq_init();
 	if (ret)
 		return ret;

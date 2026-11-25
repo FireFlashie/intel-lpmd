@@ -177,6 +177,95 @@ int cpumask_add_cpu(int cpu, enum cpumask_idx idx)
 	return LPMD_SUCCESS;
 }
 
+static unsigned int count_cpu_type_cores(unsigned char *bitmask)
+{
+	unsigned int count = 0;
+	int i;
+
+	for (i = 0; i < get_max_cpus(); i++) {
+		if (bitmask[i / 8] & (1 << (i % 8)))
+			count++;
+	}
+	return count;
+}
+
+void free_cpu_type_masks(lpmd_config_t *lpmd_config)
+{
+	int i;
+
+	for (i = 0; i < CORE_TYPES_COUNT; i++) {
+		free(lpmd_config->core_type_masks[i]);
+		lpmd_config->core_type_masks[i] = NULL;
+	}
+}
+
+int allocate_cpu_type_masks(lpmd_config_t *lpmd_config)
+{
+	size_t size = (get_max_cpus() + 7) / 8;
+	int i;
+
+	for (i = 0; i < CORE_TYPES_COUNT; i++) {
+		lpmd_config->core_type_masks[i] = calloc(1, size);
+		if (!lpmd_config->core_type_masks[i]) {
+			free_cpu_type_masks(lpmd_config);
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
+static unsigned int get_next_cpu_cmask(unsigned int id, unsigned char *cmask)
+{
+	int i;
+
+	for (i = id; i < get_max_cpus(); i++) {
+		if (cmask[i / 8] & (1 << (i % 8)))
+			return i;
+	}
+	return id;
+}
+
+/*
+ * Populate idx with CPUs of the given core type. buf is either a count or
+ * the "ALL" keyword which selects every online CPU of that type.
+ * Returns the number of CPUs added, or 0 when nothing was requested.
+ */
+int cpumask_init_cpus_type(char *buf, enum cpumask_idx idx,
+			   unsigned char **cmasks, enum core_type type)
+{
+	unsigned int current, next, count;
+	int nr_cpus = 0;
+	char *end;
+
+	if (!buf || buf[0] == '\0')
+		return 0;
+
+	if (!strncmp(buf, "ALL", strlen("ALL")) || !strncmp(buf, "all", strlen("all"))) {
+		count = count_cpu_type_cores(cmasks[type]);
+	} else {
+		errno = 0;
+		count = strtol(buf, &end, 10);
+		if (errno || *end != '\0' || !count)
+			return 0;
+	}
+
+	if (!count)
+		return 0;
+
+	current = get_next_cpu_cmask(0, cmasks[type]);
+	while (nr_cpus != count) {
+		cpumask_add_cpu(current, idx);
+		next = get_next_cpu_cmask(current + 1, cmasks[type]);
+		if (next == current) /* Couldn't find next core of the provided type */
+			return nr_cpus;
+		nr_cpus++;
+		current = next;
+	}
+
+	return nr_cpus;
+}
+
 int cpumask_init_cpus(char *buf, enum cpumask_idx idx)
 {
 	unsigned int start, end;

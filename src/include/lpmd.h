@@ -144,11 +144,19 @@ enum default_config_state {
 	STATE_NONE = MAX_STATES,
 };
 
+#define CORE_TYPES_COUNT	3
+enum core_type {
+	P_CORE,
+	E_CORE,
+	L_CORE,
+};
+
 typedef struct {
 	int id;
 	int valid;
 	char name[MAX_STATE_NAME];
 	int wlt_type;
+	int wlt_type_mask;
 	int entry_system_load_thres;
 	int exit_system_load_thres;
 	int exit_system_load_hyst;
@@ -164,12 +172,9 @@ typedef struct {
 	char active_cpus[MAX_STR_LENGTH];
 	// If active CPUs are specified then
 	// the below counts don't matter
-	int island_0_number_p_cores;
-	int island_0_number_e_cores;
-	int island_1_number_p_cores;
-	int island_1_number_e_cores;
-	int island_2_number_p_cores;
-	int island_2_number_e_cores;
+	char active_p_cores[MAX_STR_LENGTH];
+	char active_e_cores[MAX_STR_LENGTH];
+	char active_l_cores[MAX_STR_LENGTH];
 
 	int itmt_state;
 	int irq_migrate;
@@ -229,6 +234,7 @@ typedef struct {
 
 	lpmd_config_state_t config_states[MAX_STATES];
 	lpmd_data_t data;
+	unsigned char *core_type_masks[CORE_TYPES_COUNT];
 } lpmd_config_t;
 
 enum lpm_cpu_process_mode {
@@ -379,8 +385,13 @@ int cpumask_alloc(void);
 int cpumask_free(enum cpumask_idx idx);
 int cpumask_reset(enum cpumask_idx idx);
 
+void free_cpu_type_masks(lpmd_config_t *lpmd_config);
+int allocate_cpu_type_masks(lpmd_config_t *lpmd_config);
+
 int cpumask_add_cpu(int cpu, enum cpumask_idx idx);
 int cpumask_init_cpus(char *buf, enum cpumask_idx idx);
+int cpumask_init_cpus_type(char *buf, enum cpumask_idx idx,
+			   unsigned char **cmasks, enum core_type type);
 int cpumask_nr_cpus(enum cpumask_idx idx);
 int cpumask_has_cpu(enum cpumask_idx idx);
 
