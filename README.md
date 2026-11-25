@@ -92,6 +92,15 @@ Run a workload and monitor `lpmd` to ensure it puts the system in the appropriat
 
 ## Releases
 
+### Release 0.1.0.1
+- Add support for Arrow Lake-H.
+- Add WLTTypeMask to match a mask of workload types per state.
+- Add ActivePcores, ActiveEcores and ActiveLcores per-state core selection,
+  including the "ALL" keyword.
+- Fix the default states not being built, which made every profile switch
+  fall back to the L-core mask and re-enter the same state continuously.
+- Report writes rejected by cgroupfs/sysfs instead of silently ignoring them.
+
 ### Release 0.1.0
 - Add support for Panther Lake
 
