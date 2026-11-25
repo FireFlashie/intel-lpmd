@@ -235,6 +235,7 @@ int cpumask_init_cpus_type(char *buf, enum cpumask_idx idx,
 			   unsigned char **cmasks, enum core_type type)
 {
 	unsigned int current, next, count;
+	long requested;
 	int nr_cpus = 0;
 	char *end;
 
@@ -245,9 +246,14 @@ int cpumask_init_cpus_type(char *buf, enum cpumask_idx idx,
 		count = count_cpu_type_cores(cmasks[type]);
 	} else {
 		errno = 0;
-		count = strtol(buf, &end, 10);
-		if (errno || *end != '\0' || !count)
+		requested = strtol(buf, &end, 10);
+		if (errno || *end != '\0' || requested <= 0)
 			return 0;
+
+		/* Never ask for more cores than the type actually has. */
+		count = count_cpu_type_cores(cmasks[type]);
+		if ((unsigned long)requested < count)
+			count = requested;
 	}
 
 	if (!count)
