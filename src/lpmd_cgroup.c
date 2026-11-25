@@ -170,7 +170,14 @@ static int process_cpu_cgroupv2(lpmd_config_state_t *state)
 	}
 }
 
-/* Support for cgroup based cpu isolation */
+/*
+ * Support for cgroup based cpu isolation.
+ *
+ * cpuset.cpus here holds the CPUs that are taken away from the rest of the
+ * system, which is the complement of the state's active mask. The partition
+ * has to be dropped back to "member" before the list changes, because cpus
+ * may only be widened while the cgroup is not a partition root.
+ */
 static int process_cpu_isolate(lpmd_config_state_t *state)
 {
 	if (lpmd_write_str ("/sys/fs/cgroup/lpm/cpuset.cpus.partition", "member", LPMD_LOG_DEBUG))

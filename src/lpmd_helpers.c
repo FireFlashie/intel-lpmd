@@ -20,6 +20,7 @@
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <err.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
@@ -97,10 +98,21 @@ static int _write_str(const char *name, char *str, int print_level, int log_leve
 	}
 
 	ret = fprintf (filep, "%s", str);
-	if (ret <= 0) {
+	if (ret < 0) {
 		lpmd_log_error ("%sWrite \"%s\" to %s failed, strlen %zu, ret %d\n", prefix, str, name,
 						strlen (str), ret);
 		fclose (filep);
+		return 1;
+	}
+
+	/*
+	 * cgroupfs and sysfs apply writes on close, so a value the kernel
+	 * rejects only surfaces here. Without this check a failed write looked
+	 * like a success and left the system in the previous state.
+	 */
+	if (fclose (filep)) {
+		lpmd_log_error ("%sWrite \"%s\" to %s failed: %s\n", prefix, str, name,
+						strerror (errno));
 		return 1;
 	}
 
@@ -118,7 +130,6 @@ static int _write_str(const char *name, char *str, int print_level, int log_leve
 			break;
 	}
 
-	fclose (filep);
 	return 0;
 }
 
